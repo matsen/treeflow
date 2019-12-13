@@ -8,10 +8,10 @@ def coalescent_likelihood(lineage_count,
                           population_areas, # Integrals of 1/N
                           coalescent_mask): # At top of interval
     k_choose_2 = tf.cast(lineage_count * (lineage_count - 1), dtype=tf.float32) / 2.0
-    return -tf.reduce_sum(k_choose_2 * population_areas) - tf.reduce_sum(tf.math.log(tf.boolean_mask(population_func, coalescent_mask)))
+    return -tf.reduce_sum(k_choose_2 * population_areas, axis=-1) - tf.reduce_sum(tf.math.log(tf.boolean_mask(population_func, coalescent_mask)), axis=-1)
 
 def get_lineage_count(event_types):
-    return tf.math.cumsum(event_types)
+    return tf.math.cumsum(event_types, axis=-1)
 
 class ConstantCoalescent(tfp.distributions.Distribution):
     def __init__(self, pop_size,sampling_times,
@@ -38,18 +38,25 @@ class ConstantCoalescent(tfp.distributions.Distribution):
     def _log_prob(self, x):
         # TODO: Validate topology
         node_heights = x['heights']
-        heights = tf.concat([self.sampling_times, node_heights], 0)
-        node_mask = tf.concat([tf.fill([self.taxon_count], False), tf.fill([self.taxon_count - 1], True)], 0)
 
-        sort_indices = tf.argsort(heights)
-        heights_sorted = tf.gather(heights, sort_indices)
-        node_mask_sorted = tf.gather(node_mask, sort_indices)
+        batch_shape = node_heights.shape[:-1]
+        sampling_times_b = tf.broadcast_to(self.sampling_times, batch_shape + self.taxon_count)
 
-        lineage_count =  get_lineage_count(tf.where(node_mask_sorted, COALESCENCE, SAMPLING))[:-1]
-        population_func = tf.broadcast_to(tf.expand_dims(self.pop_size, 0), lineage_count.shape)
-        durations = heights_sorted[1:] - heights_sorted[:-1]
-        population_areas = durations / self.pop_size
-        coalescent_mask = node_mask_sorted[1:]
+        heights = tf.concat([sampling_times_b, node_heights], -1)
+        node_mask = tf.broadcast_to(tf.concat([tf.fill([self.taxon_count], False), tf.fill([self.taxon_count - 1], True)], 0), batch_shape + (2 * self.taxon_count - 1))
+
+        sort_indices = tf.argsort(heights,axis=-1)
+        heights_sorted = tf.gather(heights, sort_indices, batch_dims=-1)
+        node_mask_sorted = tf.gather(node_mask, sort_indices, batch_dims=-1)
+
+        lineage_count =  get_lineage_count(tf.where(node_mask_sorted, COALESCENCE, SAMPLING))[..., :-1]
+
+        pop_size_b = tf.expand_dims(tf.broadcast_to(self.pop_size, batch_shape), -1)
+
+        population_func = tf.broadcast_to(pop_size_b, lineage_count.shape)
+        durations = heights_sorted[..., 1:] - heights_sorted[..., :-1]
+        population_areas = durations / pop_size_b
+        coalescent_mask = node_mask_sorted[..., 1:]
 
         return coalescent_likelihood(lineage_count, population_func, population_areas, coalescent_mask)
 
