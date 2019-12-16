@@ -39,7 +39,7 @@ def compress_sites(sequence_dict):
     return pattern_dict, counts
 
 def encode_sequence_dict(sequence_dict, taxon_names):
-    return tf.convert_to_tensor(np.array([[init_partials_dict[char] for char in sequence_dict[taxon_name]] for taxon_name in taxon_names]))
+    return tf.convert_to_tensor(np.array([[init_partials_dict[char] for char in sequence_dict[taxon_name]] for taxon_name in taxon_names]), dtype=tf.float32)
 
 def get_encoded_sequences(fasta_file, taxon_names):
     sequence_dict = parse_fasta(fasta_file)

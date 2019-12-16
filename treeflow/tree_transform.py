@@ -18,9 +18,10 @@ class BranchBreaking(tfp.bijectors.Bijector): # TODO: Broadcast over batch_dims
         ) # Begin with node on first axis
         def f(out, elems):
             node_index, parent_index, proportion, anchor_height = elems
-            parent_height = tf.gather(out, parent_index, batch_dims=-1)
+            out_t = tf.transpose(out,) # TODO: Can we do this by supplying axis to gather? Or by not permuting output?
+            parent_height = tf.gather(out_t, parent_index, batch_dims=-1)
             node_height = (parent_height - anchor_height) * proportion + anchor_height
-            return tf.tensor_scatter_nd_update(out, tf.reshape(node_index, [1, 1]), node_height)
+            return tf.tensor_scatter_nd_update(out, tf.reshape(node_index, [-1, 1]), node_height)
 
         batch_dim_count = tf.rank(x) - 1
         preorder_node_indices_b = tf.broadcast_to(self.preorder_node_indices, batch_shape + (self.taxon_count - 2))
@@ -45,7 +46,8 @@ class BranchBreaking(tfp.bijectors.Bijector): # TODO: Broadcast over batch_dims
                 preorder_x_trans,
                 preorder_anchor_heights_trans
             ),
-            init)[-1]
+            init)
+        scan_result = scan_result[-1]
 
         unperm = tf.concat([tf.range(1, batch_dim_count + 1), tf.zeros(1, dtype=tf.int32)], axis=0)
         return tf.transpose(scan_result, unperm)
@@ -71,7 +73,7 @@ class TreeChain(tfp.bijectors.Chain):
         branch_breaking = BranchBreaking(parent_indices, preorder_node_indices, anchor_heights=anchor_heights)
         blockwise = tfp.bijectors.Blockwise(
             [tfp.bijectors.Sigmoid(), tfp.bijectors.Exp()],
-            block_sizes=tf.concat([parent_indices.shape, [1]], 0)
+            block_sizes=tf.concat([parent_indices.shape[-1:], [1]], 0)
         )
         super(TreeChain, self).__init__([branch_breaking, blockwise], name=name)
 

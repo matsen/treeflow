@@ -10,13 +10,15 @@ test_data = [[tf.convert_to_tensor(np.array(x), dtype=dtype) for x, dtype in zip
     ([1.2, 0.9, 1.8, 2.4], [3, 2, 3], [0, 2, 1], [0.5, 0.5, 0.75, 2.4])
 ]]
 
-@pytest.mark.parametrize('heights,parent_indices,preorder_indices,transformed', test_data)
+test_data_b = test_data + [[tf.expand_dims(x, 0) for x in test_data[1]]]
+
+@pytest.mark.parametrize('heights,parent_indices,preorder_indices,transformed', test_data_b)
 def test_branch_breaking_forward(heights, parent_indices, preorder_indices, transformed):
     transform = BranchBreaking(parent_indices, preorder_indices)
     res = transform.forward(transformed)
     assert_allclose(res.numpy(), heights.numpy(), rtol=1e-6)
 
-@pytest.mark.parametrize('heights,parent_indices,preorder_indices,transformed', test_data)
+@pytest.mark.parametrize('heights,parent_indices,preorder_indices,transformed', test_data_b)
 def test_branch_breaking_inverse(heights, parent_indices, preorder_indices, transformed):
     transform = BranchBreaking(parent_indices, preorder_indices)
     res = transform.inverse(heights)
@@ -36,16 +38,16 @@ def logit(y):
     return tf.math.log(y) - tf.math.log1p(-y)
 
 def unconstrain(transformed):
-    return tf.concat([logit(transformed[:-1]), tf.math.log(transformed[-1:])], 0)
+    return tf.concat([logit(transformed[..., :-1]), tf.math.log(transformed[..., -1:])], -1)
 
-@pytest.mark.parametrize('heights,parent_indices,preorder_indices,transformed', test_data)
+@pytest.mark.parametrize('heights,parent_indices,preorder_indices,transformed', test_data_b)
 def test_tree_transform_forward(heights, parent_indices, preorder_indices, transformed):
     transform = TreeChain(parent_indices, preorder_indices)
     unconstrained = unconstrain(transformed)
     res = transform.forward(unconstrained)
     assert_allclose(res.numpy(), heights.numpy(), rtol=1e-6)
 
-@pytest.mark.parametrize('heights,parent_indices,preorder_indices,transformed', test_data)
+@pytest.mark.parametrize('heights,parent_indices,preorder_indices,transformed', test_data_b)
 def test_tree_transform_inverse(heights, parent_indices, preorder_indices, transformed):
     transform = TreeChain(parent_indices, preorder_indices)
     unconstrained = unconstrain(transformed)
@@ -63,4 +65,4 @@ def test_tree_transform_jac(heights, parent_indices, preorder_indices, transform
     assert_allclose(log_det_jac.numpy(), transform.inverse_log_det_jacobian(heights, event_ndims=1).numpy(), rtol=1e-6)
 
 # TODO: Tests for heterochronous case
-# TODO: Tests for broadcasting
+# TODO: Tests for broadcasting (esp. Jac)
